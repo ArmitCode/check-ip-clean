@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 import ipaddress
 
 # ==================== تنظیمات ====================
-TARGET_IP = None  # اگر None باشد، IP عمومی سرور را تشخیص می‌دهد
+TARGET_IP = None  # اگر None باشد، از کاربر می‌پرسد یا تشخیص می‌دهد
 TARGET_PORTS_TCP = [80, 443, 22, 21, 25, 53, 110, 143, 993, 995, 8080, 8443, 3389, 5900]
 TARGET_PORTS_UDP = [53, 123, 161, 443]  # DNS, NTP, SNMP, QUIC
 PING_COUNT = 10
@@ -95,6 +95,44 @@ def print_result(label, status, detail=""):
         color = "blue"
 
     print(f"  {icon} {colored(label, color)} {detail}")
+
+def get_ip_from_user():
+    """دریافت IP از کاربر با اعتبارسنجی"""
+    while True:
+        print(f"\n{colored('💻 لطفاً IP سرور را وارد کنید:', 'bold')}")
+        print(f"  {colored('نمونه:', 'cyan')} 185.123.456.78  یا  192.168.1.1")
+        print(f"  {colored('برای تشخیص خودکار IP عمومی، خالی بگذارید و Enter بزنید.', 'yellow')}")
+        print(f"  {colored('برای خروج، q یا quit تایپ کنید.', 'red')}")
+        print()
+
+        user_input = input(f"{colored('IP >>> ', 'magenta')} ").strip()
+
+        # خروج
+        if user_input.lower() in ['q', 'quit', 'exit', 'خروج']:
+            print(f"\n{colored('👋 خداحافظ!', 'cyan')}")
+            sys.exit(0)
+
+        # تشخیص خودکار
+        if not user_input:
+            print(f"  {colored('⏳ در حال تشخیص IP عمومی...', 'yellow')}")
+            ip = get_public_ip()
+            if ip:
+                confirm = input(f"  {colored('IP شناسایی شده:', 'green')} {ip} \n  آیا تایید می‌کنید؟ (y/n): ").strip().lower()
+                if confirm in ['y', 'yes', 'بله', '']:
+                    return ip
+                else:
+                    continue
+            else:
+                print(f"  {colored('❌ خطا در تشخیص IP عمومی.', 'red')}")
+                continue
+
+        # اعتبارسنجی IP
+        try:
+            ipaddress.ip_address(user_input)
+            return user_input
+        except ValueError:
+            print(f"  {colored('❌ IP نامعتبر است! لطفاً دوباره تلاش کنید.', 'red')}")
+            continue
 
 # ==================== تست TCP ====================
 
@@ -631,19 +669,28 @@ def main():
     print(f"{colored('  بررسی دسترسی IP از ایران', 'bold')}")
     print(f"{colored('='*60, 'magenta')}")
 
-    # دریافت IP
-    if TARGET_IP:
-        ip = TARGET_IP
-        print(f"\n  IP تنظیم‌شده: {ip}")
-    else:
-        print(f"\n  در حال تشخیص IP عمومی سرور...")
-        ip = get_public_ip()
-        if ip:
-            print(f"  ✅ IP شناسایی شد: {ip}")
-        else:
-            print(f"  ❌ خطا در تشخیص IP. لطفاً IP را به صورت دستی وارد کنید.")
-            print(f"  نحوه استفاده: python3 script.py <IP_ADDRESS>")
+    # دریافت IP با اولویت: آرگومان → TARGET_IP → ورودی کاربر → تشخیص خودکار
+    ip = None
+
+    # اولویت 1: آرگومان خط فرمان
+    if len(sys.argv) > 1:
+        try:
+            ipaddress.ip_address(sys.argv[1])
+            ip = sys.argv[1]
+            print(f"\n  ✅ IP از آرگومان خط فرمان: {ip}")
+        except ValueError:
+            print(f"\n  ❌ IP نامعتبر در آرگومان: {sys.argv[1]}")
             sys.exit(1)
+
+    # اولویت 2: TARGET_IP در کد
+    elif TARGET_IP:
+        ip = TARGET_IP
+        print(f"\n  ✅ IP از تنظیمات کد: {ip}")
+
+    # اولویت 3: ورودی از کاربر
+    else:
+        ip = get_ip_from_user()
+        print(f"\n  ✅ IP انتخاب‌شده: {ip}")
 
     # تست‌ها
     tcp_results = test_tcp_ports(ip, TARGET_PORTS_TCP)
@@ -663,13 +710,4 @@ def main():
     print(f"{colored('='*60, 'magenta')}")
 
 if __name__ == "__main__":
-    # اگر IP به عنوان آرگومان داده شده
-    if len(sys.argv) > 1:
-        try:
-            ipaddress.ip_address(sys.argv[1])
-            TARGET_IP = sys.argv[1]
-        except ValueError:
-            print(f"❌ IP نامعتبر: {sys.argv[1]}")
-            sys.exit(1)
-
     main()
