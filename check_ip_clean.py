@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-IP Connectivity Checker - TCP/UDP/Ping Test for Iran Access
-بررسی دسترسی IP سرور از ایران
+IP Connectivity Checker - Iran Access Test
+Comprehensive TCP/UDP/Ping/DNS/HTTP/Traceroute/MTU testing tool
+to verify server accessibility from Iran.
+
+Author: Community
+License: MIT
+Python: 3.7+
 """
 
 import socket
@@ -12,19 +17,18 @@ import random
 import select
 import subprocess
 import sys
-import threading
 import concurrent.futures
 from urllib.parse import urlparse
 import ipaddress
 
-# ==================== تنظیمات ====================
-TARGET_IP = None  # اگر None باشد، از کاربر می‌پرسد یا تشخیص می‌دهد
+# ==================== CONFIGURATION ====================
+TARGET_IP = None  # Set to None to prompt user, or hardcode an IP
 TARGET_PORTS_TCP = [80, 443, 22, 21, 25, 53, 110, 143, 993, 995, 8080, 8443, 3389, 5900]
 TARGET_PORTS_UDP = [53, 123, 161, 443]  # DNS, NTP, SNMP, QUIC
 PING_COUNT = 10
 TIMEOUT = 5
 
-# لیست DNS سرورهای ایران برای تست
+# Iranian DNS servers for testing
 IRAN_DNS_SERVERS = [
     ("8.8.8.8", "Google DNS"),
     ("1.1.1.1", "Cloudflare DNS"),
@@ -35,10 +39,10 @@ IRAN_DNS_SERVERS = [
     ("10.202.10.102", "Radar Game 2"),
 ]
 
-# ==================== توابع کمکی ====================
+# ==================== UTILITY FUNCTIONS ====================
 
 def get_public_ip():
-    """دریافت IP عمومی سرور"""
+    """Detect public IP of the current machine"""
     import requests
     services = [
         "https://api.ipify.org?format=json",
@@ -59,7 +63,7 @@ def get_public_ip():
     return None
 
 def colored(text, color):
-    """افزودن رنگ به متن ترمینال"""
+    """Add ANSI color to terminal text"""
     colors = {
         'red': '\033[91m',
         'green': '\033[92m',
@@ -74,70 +78,70 @@ def colored(text, color):
     return f"{colors.get(color, '')}{text}{colors['reset']}"
 
 def print_header(text):
-    """چاپ هدر بخش"""
+    """Print a section header"""
     print(f"\n{colored('='*60, 'cyan')}")
     print(f"{colored(text, 'bold')}")
     print(f"{colored('='*60, 'cyan')}")
 
 def print_result(label, status, detail=""):
-    """چاپ نتیجه با رنگ"""
+    """Print a colored result line"""
     if status == "OK":
-        icon = colored("✅", "green")
+        icon = colored("[PASS]", "green")
         color = "green"
     elif status == "FAIL":
-        icon = colored("❌", "red")
+        icon = colored("[FAIL]", "red")
         color = "red"
     elif status == "WARN":
-        icon = colored("⚠️", "yellow")
+        icon = colored("[WARN]", "yellow")
         color = "yellow"
     else:
-        icon = colored("ℹ️", "blue")
+        icon = colored("[INFO]", "blue")
         color = "blue"
 
     print(f"  {icon} {colored(label, color)} {detail}")
 
 def get_ip_from_user():
-    """دریافت IP از کاربر با اعتبارسنجی"""
+    """Prompt user for IP with validation"""
     while True:
-        print(f"\n{colored('💻 لطفاً IP سرور را وارد کنید:', 'bold')}")
-        print(f"  {colored('نمونه:', 'cyan')} 185.123.456.78  یا  192.168.1.1")
-        print(f"  {colored('برای تشخیص خودکار IP عمومی، خالی بگذارید و Enter بزنید.', 'yellow')}")
-        print(f"  {colored('برای خروج، q یا quit تایپ کنید.', 'red')}")
+        print(f"\n{colored('Please enter the server IP address:', 'bold')}")
+        print(f"  {colored('Example:', 'cyan')} 185.123.456.78  or  192.168.1.1")
+        print(f"  {colored('Leave empty and press Enter to auto-detect public IP.', 'yellow')}")
+        print(f"  {colored('Type q or quit to exit.', 'red')}")
         print()
 
         user_input = input(f"{colored('IP >>> ', 'magenta')} ").strip()
 
-        # خروج
-        if user_input.lower() in ['q', 'quit', 'exit', 'خروج']:
-            print(f"\n{colored('👋 خداحافظ!', 'cyan')}")
+        # Exit
+        if user_input.lower() in ['q', 'quit', 'exit']:
+            print(f"\n{colored('Goodbye!', 'cyan')}")
             sys.exit(0)
 
-        # تشخیص خودکار
+        # Auto-detect
         if not user_input:
-            print(f"  {colored('⏳ در حال تشخیص IP عمومی...', 'yellow')}")
+            print(f"  {colored('Auto-detecting public IP...', 'yellow')}")
             ip = get_public_ip()
             if ip:
-                confirm = input(f"  {colored('IP شناسایی شده:', 'green')} {ip} \n  آیا تایید می‌کنید؟ (y/n): ").strip().lower()
-                if confirm in ['y', 'yes', 'بله', '']:
+                confirm = input(f"  {colored('Detected IP:', 'green')} {ip} \n  Confirm? (y/n): ").strip().lower()
+                if confirm in ['y', 'yes', '']:
                     return ip
                 else:
                     continue
             else:
-                print(f"  {colored('❌ خطا در تشخیص IP عمومی.', 'red')}")
+                print(f"  {colored('Error: Could not detect public IP.', 'red')}")
                 continue
 
-        # اعتبارسنجی IP
+        # Validate IP
         try:
             ipaddress.ip_address(user_input)
             return user_input
         except ValueError:
-            print(f"  {colored('❌ IP نامعتبر است! لطفاً دوباره تلاش کنید.', 'red')}")
+            print(f"  {colored('Invalid IP address! Please try again.', 'red')}")
             continue
 
-# ==================== تست TCP ====================
+# ==================== TCP TESTS ====================
 
 def test_tcp_port(ip, port, timeout=TIMEOUT):
-    """تست اتصال TCP به یک پورت"""
+    """Test TCP connection to a specific port"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
@@ -156,10 +160,10 @@ def test_tcp_port(ip, port, timeout=TIMEOUT):
         return False, str(e), None
 
 def test_tcp_ports(ip, ports):
-    """تست چندین پورت TCP"""
-    print_header("🔌 تست اتصال TCP (TCP Connection Test)")
-    print(f"  هدف: {ip}")
-    print(f"  پورت‌های تست: {', '.join(map(str, ports))}")
+    """Test multiple TCP ports concurrently"""
+    print_header("TCP Connection Test")
+    print(f"  Target: {ip}")
+    print(f"  Testing ports: {', '.join(map(str, ports))}")
     print()
 
     results = {}
@@ -180,15 +184,15 @@ def test_tcp_ports(ip, ports):
 
     return results
 
-# ==================== تست UDP ====================
+# ==================== UDP TESTS ====================
 
 def test_udp_dns(ip, port=53, timeout=TIMEOUT):
-    """تست UDP با ارسال یک Query DNS"""
+    """Test UDP by sending a DNS query"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
 
-        # ساخت یک DNS Query ساده برای google.com
+        # Build a simple DNS query for google.com
         transaction_id = random.randint(0, 65535)
         flags = 0x0100  # Standard query
         questions = 1
@@ -196,10 +200,8 @@ def test_udp_dns(ip, port=53, timeout=TIMEOUT):
         authority_rrs = 0
         additional_rrs = 0
 
-        # Header
         header = struct.pack('!HHHHHH', transaction_id, flags, questions, answer_rrs, authority_rrs, additional_rrs)
 
-        # Question: google.com A
         domain = b'\x06google\x03com\x00'
         q_type = 1  # A record
         q_class = 1  # IN
@@ -210,14 +212,12 @@ def test_udp_dns(ip, port=53, timeout=TIMEOUT):
         start = time.time()
         sock.sendto(packet, (ip, port))
 
-        # انتظار برای پاسخ
         ready, _, _ = select.select([sock], [], [], timeout)
         if ready:
             data, addr = sock.recvfrom(512)
             elapsed = (time.time() - start) * 1000
             sock.close()
 
-            # بررسی اینکه پاسخ معتبر است
             if len(data) > 12:
                 response_id = struct.unpack('!H', data[:2])[0]
                 if response_id == transaction_id:
@@ -232,7 +232,7 @@ def test_udp_dns(ip, port=53, timeout=TIMEOUT):
         return False, str(e), None
 
 def test_udp_port(ip, port, timeout=TIMEOUT):
-    """تست UDP به یک پورت"""
+    """Test UDP connection to a port"""
     if port == 53:
         return test_udp_dns(ip, port, timeout)
 
@@ -240,7 +240,6 @@ def test_udp_port(ip, port, timeout=TIMEOUT):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
 
-        # ارسال یک بسته داده ساده
         message = b'\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
         start = time.time()
         sock.sendto(message, (ip, port))
@@ -260,11 +259,11 @@ def test_udp_port(ip, port, timeout=TIMEOUT):
         return False, str(e), None
 
 def test_udp_ports(ip, ports):
-    """تست چندین پورت UDP"""
-    print_header("📡 تست اتصال UDP (UDP Connection Test)")
-    print(f"  هدف: {ip}")
-    print(f"  پورت‌های تست: {', '.join(map(str, ports))}")
-    print(f"  {colored('نکته:', 'yellow')} UDP connectionless است. 'No response' به معنای فیلتر یا بسته بودن پورت است.")
+    """Test multiple UDP ports"""
+    print_header("UDP Connection Test")
+    print(f"  Target: {ip}")
+    print(f"  Testing ports: {', '.join(map(str, ports))}")
+    print(f"  {colored('Note:', 'yellow')} UDP is connectionless. 'No response' may mean filtered or closed port.")
     print()
 
     results = {}
@@ -278,12 +277,11 @@ def test_udp_ports(ip, ports):
 
     return results
 
-# ==================== تست Ping ====================
+# ==================== PING TESTS ====================
 
 def ping_host(ip, count=PING_COUNT, timeout=2):
-    """تست ping با استفاده از پروتکل ICMP"""
+    """Test ICMP ping"""
     try:
-        # استفاده از subprocess برای ping سیستمی
         if sys.platform == "win32":
             cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), ip]
         else:
@@ -292,13 +290,10 @@ def ping_host(ip, count=PING_COUNT, timeout=2):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 5)
         output = result.stdout + result.stderr
 
-        # Parse ping statistics
         if sys.platform == "win32":
-            # Windows parsing
             if "Received = 0" in output or "100% loss" in output:
                 return False, "100% packet loss", None, None, output
 
-            # Extract times
             times = []
             for line in output.split('\n'):
                 if "time=" in line or "time<" in line:
@@ -320,18 +315,10 @@ def ping_host(ip, count=PING_COUNT, timeout=2):
             else:
                 return False, "No response received", None, None, output
         else:
-            # Linux/Unix parsing
             if "100% packet loss" in output or "0 received" in output:
                 return False, "100% packet loss", None, None, output
 
-            # Extract statistics from last line
             lines = output.split('\n')
-            stats_line = None
-            for line in lines:
-                if "rtt min/avg/max" in line or "round-trip" in line:
-                    stats_line = line
-                    break
-
             times = []
             for line in lines:
                 if "time=" in line:
@@ -358,10 +345,10 @@ def ping_host(ip, count=PING_COUNT, timeout=2):
         return False, str(e), None, None, ""
 
 def test_ping(ip):
-    """تست ping"""
-    print_header("🏓 تست Ping (ICMP)")
-    print(f"  هدف: {ip}")
-    print(f"  تعداد بسته‌ها: {PING_COUNT}")
+    """Run ping test and display results"""
+    print_header("ICMP Ping Test")
+    print(f"  Target: {ip}")
+    print(f"  Packets: {PING_COUNT}")
     print()
 
     success, detail, avg_time, time_range, raw_output = ping_host(ip, PING_COUNT)
@@ -369,34 +356,34 @@ def test_ping(ip):
     if success:
         min_time, max_time = time_range
         print_result("Ping Status", "OK", f"- {detail}")
-        print(f"  {colored('📊 آمار:', 'cyan')}")
-        print(f"     میانگین تاخیر: {colored(f'{avg_time:.1f}ms', 'green')}")
-        print(f"     حداقل تاخیر: {colored(f'{min_time:.1f}ms', 'green')}")
-        print(f"     حداکثر تاخیر: {colored(f'{max_time:.1f}ms', 'yellow')}")
+        print(f"  {colored('Statistics:', 'cyan')}")
+        print(f"     Average latency: {colored(f'{avg_time:.1f}ms', 'green')}")
+        print(f"     Minimum latency: {colored(f'{min_time:.1f}ms', 'green')}")
+        print(f"     Maximum latency: {colored(f'{max_time:.1f}ms', 'yellow')}")
 
         if avg_time < 50:
-            quality = colored("عالی (Excellent)", "green")
+            quality = colored("Excellent", "green")
         elif avg_time < 100:
-            quality = colored("خوب (Good)", "green")
+            quality = colored("Good", "green")
         elif avg_time < 200:
-            quality = colored("متوسط (Average)", "yellow")
+            quality = colored("Average", "yellow")
         else:
-            quality = colored("ضعیف (Poor)", "red")
+            quality = colored("Poor", "red")
 
-        print(f"     کیفیت اتصال: {quality}")
+        print(f"     Connection quality: {quality}")
     else:
         print_result("Ping Status", "FAIL", f"- {detail}")
-        print(f"  {colored('⚠️ هشدار:', 'yellow')} Ping از ایران ممکن است به دلیل فیلترینگ ICMP مسدود شود.")
-        print(f"  این به معنای فیلتر IP نیست، بلکه ممکن است فقط ICMP مسدود باشد.")
+        print(f"  {colored('Warning:', 'yellow')} Ping may be blocked by Iranian ISPs due to ICMP filtering.")
+        print(f"  This does NOT necessarily mean the IP is filtered - only ICMP might be blocked.")
 
     return success, detail, avg_time
 
-# ==================== تست DNS Resolution ====================
+# ==================== DNS TESTS ====================
 
 def test_dns_resolution(ip):
-    """تست اینکه IP از طریق DNS قابل resolve است"""
-    print_header("🔍 تست DNS Resolution")
-    print(f"  بررسی Reverse DNS برای {ip}")
+    """Test DNS resolution capabilities"""
+    print_header("DNS Resolution Test")
+    print(f"  Checking Reverse DNS for {ip}")
     print()
 
     try:
@@ -407,11 +394,9 @@ def test_dns_resolution(ip):
     except Exception as e:
         print_result("Reverse DNS", "FAIL", f"- {e}")
 
-    # تست DNS از سرورهای ایران
-    print(f"\n  {colored('تست DNS از سرورهای مختلف:', 'cyan')}")
+    print(f"\n  {colored('Testing DNS from various servers:', 'cyan')}")
     for dns_ip, dns_name in IRAN_DNS_SERVERS:
         try:
-            # استفاده از dig یا nslookup
             if sys.platform == "win32":
                 cmd = ["nslookup", "google.com", dns_ip]
             else:
@@ -425,17 +410,17 @@ def test_dns_resolution(ip):
         except Exception as e:
             print_result(f"DNS {dns_name} ({dns_ip})", "FAIL", f"- {e}")
 
-# ==================== تست HTTP/HTTPS ====================
+# ==================== HTTP/HTTPS TESTS ====================
 
 def test_http_https(ip):
-    """تست دسترسی HTTP/HTTPS"""
-    print_header("🌐 تست HTTP/HTTPS")
-    print(f"  بررسی دسترسی وب به IP {ip}")
+    """Test HTTP and HTTPS accessibility"""
+    print_header("HTTP/HTTPS Accessibility Test")
+    print(f"  Testing web access to {ip}")
     print()
 
     import requests
 
-    # تست HTTP
+    # Test HTTP
     try:
         url = f"http://{ip}"
         response = requests.get(url, timeout=TIMEOUT, allow_redirects=False)
@@ -447,7 +432,7 @@ def test_http_https(ip):
     except Exception as e:
         print_result("HTTP (Port 80)", "FAIL", f"- {type(e).__name__}")
 
-    # تست HTTPS
+    # Test HTTPS
     try:
         url = f"https://{ip}"
         response = requests.get(url, timeout=TIMEOUT, allow_redirects=False, verify=False)
@@ -461,12 +446,12 @@ def test_http_https(ip):
     except Exception as e:
         print_result("HTTPS (Port 443)", "FAIL", f"- {type(e).__name__}")
 
-# ==================== تست Traceroute ====================
+# ==================== TRACEROUTE TESTS ====================
 
 def test_traceroute(ip):
-    """تست traceroute"""
-    print_header("🛤️ تست Traceroute (مسیر شبکه)")
-    print(f"  بررسی مسیر تا {ip}")
+    """Test network path with traceroute"""
+    print_header("Traceroute (Network Path)")
+    print(f"  Tracing route to {ip}")
     print()
 
     try:
@@ -478,16 +463,13 @@ def test_traceroute(ip):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         output = result.stdout
 
-        # Parse hops
         hops = []
         for line in output.split('\n'):
             line = line.strip()
             if not line:
                 continue
 
-            # Extract hop number and IP
             if sys.platform == "win32":
-                # Windows format
                 if "  " in line and not line.startswith("Tracing"):
                     parts = line.split()
                     if len(parts) >= 2 and parts[0].isdigit():
@@ -495,7 +477,6 @@ def test_traceroute(ip):
                         hop_ip = parts[-1] if parts[-1] != "*" else "*"
                         hops.append((hop_num, hop_ip))
             else:
-                # Linux format
                 parts = line.split()
                 if len(parts) >= 2 and parts[0].isdigit():
                     hop_num = parts[0]
@@ -511,28 +492,27 @@ def test_traceroute(ip):
                 else:
                     print(f"  {hop_num:3}    {hop_ip}")
 
-            # Check if destination reached
             if hops[-1][1] != "*" and len(hops) > 1:
-                print(f"\n  {colored('✅ مقصد در hop', 'green')} {hops[-1][0]} {colored('قابل دسترسی است.', 'green')}")
+                print(f"\n  {colored('[PASS]', 'green')} Destination reached at hop {hops[-1][0]}.")
             else:
-                print(f"\n  {colored('⚠️ ممکن است مسیر ناقص باشد.', 'yellow')}")
+                print(f"\n  {colored('[WARN]', 'yellow')} Path may be incomplete.")
         else:
-            print(f"  {colored('خطا در parse خروجی traceroute', 'red')}")
-            print(f"  خروجی خام:\n{output[:500]}")
+            print(f"  {colored('Error parsing traceroute output', 'red')}")
+            print(f"  Raw output:\n{output[:500]}")
 
     except FileNotFoundError:
-        print(f"  {colored('⚠️ دستور traceroute/tracert یافت نشد.', 'yellow')}")
+        print(f"  {colored('[WARN] traceroute/tracert command not found.', 'yellow')}")
     except subprocess.TimeoutExpired:
-        print(f"  {colored('⏱️ Traceroute timeout', 'yellow')}")
+        print(f"  {colored('[WARN] Traceroute timed out.', 'yellow')}")
     except Exception as e:
-        print(f"  {colored(f'خطا: {e}', 'red')}")
+        print(f"  {colored(f'Error: {e}', 'red')}")
 
-# ==================== تست MTU ====================
+# ==================== MTU TESTS ====================
 
 def test_mtu(ip):
-    """تست Maximum Transmission Unit"""
-    print_header("📦 تست MTU (Maximum Transmission Unit)")
-    print(f"  بررسی اندازه بسته‌های قابل ارسال به {ip}")
+    """Test Maximum Transmission Unit"""
+    print_header("MTU (Maximum Transmission Unit) Test")
+    print(f"  Testing optimal packet size to {ip}")
     print()
 
     sizes = [1500, 1472, 1400, 1300, 1200, 1000, 800, 576]
@@ -548,32 +528,31 @@ def test_mtu(ip):
             output = result.stdout + result.stderr
 
             if "Fragmentation needed" in output or "MTU" in output or "too long" in output or "Packet needs to be fragmented" in output:
-                print(f"  {colored('❌', 'red')} Size {size}: Fragmentation needed")
+                print(f"  {colored('[FAIL]', 'red')} Size {size}: Fragmentation needed")
             elif result.returncode == 0 or ("Reply" in output or "bytes from" in output or "1 received" in output):
-                print(f"  {colored('✅', 'green')} Size {size}: OK (no fragmentation)")
-                print(f"\n  {colored('✅ MTU بهینه:', 'green')} {size} bytes")
+                print(f"  {colored('[PASS]', 'green')} Size {size}: OK (no fragmentation)")
+                print(f"\n  {colored('[PASS] Optimal MTU:', 'green')} {size} bytes")
                 break
             else:
-                print(f"  {colored('⚠️', 'yellow')} Size {size}: No response")
+                print(f"  {colored('[WARN]', 'yellow')} Size {size}: No response")
         except Exception as e:
-            print(f"  {colored('⚠️', 'yellow')} Size {size}: Error - {e}")
+            print(f"  {colored('[WARN]', 'yellow')} Size {size}: Error - {e}")
     else:
-        print(f"\n  {colored('⚠️ نتایج MTU نامشخص.', 'yellow')}")
+        print(f"\n  {colored('[WARN] MTU results inconclusive.', 'yellow')}")
 
-# ==================== تست سرعت دانلود ====================
+# ==================== DOWNLOAD SPEED TESTS ====================
 
 def test_download_speed(ip):
-    """تست سرعت دانلود از IP"""
-    print_header("⚡ تست سرعت دانلود (Download Speed)")
-    print(f"  بررسی سرعت دانلود از {ip}")
+    """Test download speed from the IP"""
+    print_header("Download Speed Test")
+    print(f"  Testing download speed from {ip}")
     print()
 
     import requests
 
-    # تست با یک فایل کوچک (1MB test file)
     test_urls = [
         f"http://{ip}/test.zip",
-        f"http://speedtest.tele2.net/1MB.zip",  # fallback
+        f"http://speedtest.tele2.net/1MB.zip",
     ]
 
     for url in test_urls:
@@ -583,7 +562,7 @@ def test_download_speed(ip):
             total_size = 0
             for chunk in response.iter_content(chunk_size=8192):
                 total_size += len(chunk)
-                if total_size > 5 * 1024 * 1024:  # Max 5MB
+                if total_size > 5 * 1024 * 1024:
                     break
             elapsed = time.time() - start
 
@@ -598,101 +577,97 @@ def test_download_speed(ip):
 
     return None
 
-# ==================== گزارش نهایی ====================
+# ==================== FINAL REPORT ====================
 
 def print_final_report(ip, tcp_results, udp_results, ping_success, ping_detail, ping_avg):
-    """چاپ گزارش نهایی"""
-    print_header("📋 گزارش نهایی (Final Report)")
+    """Print comprehensive final report"""
+    print_header("FINAL REPORT")
 
-    print(f"\n  {colored('IP مورد بررسی:', 'bold')} {ip}")
-    print(f"  {colored('زمان بررسی:', 'bold')} {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\n  {colored('Target IP:', 'bold')} {ip}")
+    print(f"  {colored('Check time:', 'bold')} {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # TCP Summary
     tcp_ok = sum(1 for v in tcp_results.values() if v[0])
     tcp_total = len(tcp_results)
-    print(f"\n  {colored('TCP:', 'cyan')} {tcp_ok}/{tcp_total} پورت باز و قابل دسترسی")
+    print(f"\n  {colored('TCP:', 'cyan')} {tcp_ok}/{tcp_total} ports open and accessible")
 
-    # UDP Summary
     udp_ok = sum(1 for v in udp_results.values() if v[0])
     udp_total = len(udp_results)
-    print(f"  {colored('UDP:', 'cyan')} {udp_ok}/{udp_total} پورت پاسخ داد")
+    print(f"  {colored('UDP:', 'cyan')} {udp_ok}/{udp_total} ports responded")
 
-    # Ping Summary
     if ping_success:
         print(f"  {colored('Ping:', 'cyan')} {ping_detail}, Avg: {ping_avg:.1f}ms")
     else:
         print(f"  {colored('Ping:', 'cyan')} {ping_detail}")
 
-    # نتیجه‌گیری
-    print(f"\n  {colored('نتیجه‌گیری برای دسترسی از ایران:', 'bold')}")
+    print(f"\n  {colored('Conclusion for Iran access:', 'bold')}")
 
     issues = []
     warnings = []
 
     if tcp_ok == 0:
-        issues.append("هیچ پورت TCP قابل دسترسی نیست - IP احتمالاً فیلتر شده است!")
+        issues.append("No TCP ports accessible - IP is likely FILTERED from Iran!")
     elif tcp_ok < 3:
-        warnings.append("تعداد پورت‌های TCP قابل دسترسی کم است.")
+        warnings.append("Very few TCP ports accessible.")
 
     if not ping_success:
-        warnings.append("Ping پاسخ نمی‌دهد (ممکن است ICMP فیلتر باشد).")
+        warnings.append("Ping not responding (ICMP may be filtered).")
     elif ping_avg and ping_avg > 300:
-        warnings.append(f"تاخیر بالا ({ping_avg:.0f}ms) - ممکن است کیفیت اتصال پایین باشد.")
+        warnings.append(f"High latency ({ping_avg:.0f}ms) - connection quality may be poor.")
 
     if issues:
-        print(f"\n  {colored('❌ مشکلات جدی:', 'red')}")
+        print(f"\n  {colored('CRITICAL ISSUES:', 'red')}")
         for issue in issues:
             print(f"     - {issue}")
 
     if warnings:
-        print(f"\n  {colored('⚠️ هشدارها:', 'yellow')}")
+        print(f"\n  {colored('WARNINGS:', 'yellow')}")
         for warning in warnings:
             print(f"     - {warning}")
 
     if not issues and not warnings:
-        print(f"\n  {colored('✅ IP شما از نظر اتصال TCP/UDP و Ping در وضعیت خوبی است.', 'green')}")
-        print(f"  {colored('   دسترسی از ایران به نظر می‌رسد بدون مشکل باشد.', 'green')}")
+        print(f"\n  {colored('[PASS] Your IP is in good condition for TCP/UDP and Ping.', 'green')}")
+        print(f"  {colored('     Access from Iran appears to be without issues.', 'green')}")
     elif not issues:
-        print(f"\n  {colored('⚠️ IP شما قابل دسترسی است اما چند نکته وجود دارد.', 'yellow')}")
+        print(f"\n  {colored('[WARN] Your IP is accessible but there are some concerns.', 'yellow')}")
 
-    print(f"\n  {colored('💡 نکات:', 'cyan')}")
-    print(f"     - فیلترینگ ICMP (Ping) رایج است و به معنای فیلتر IP نیست.")
-    print(f"     - اگر پورت‌های خاصی (مثل 443, 80) باز هستند، IP برای وب/VPN قابل استفاده است.")
-    print(f"     - برای VPN، پورت‌های UDP مهم هستند (مثل 443, 51820 برای WireGuard).")
-    print(f"     - تست را از چندین ISP ایرانی (همراه اول، ایرانسل، مخابرات) تکرار کنید.")
+    print(f"\n  {colored('Tips:', 'cyan')}")
+    print(f"     - ICMP filtering (Ping) is common and does NOT mean the IP is filtered.")
+    print(f"     - If specific ports (like 443, 80) are open, the IP is usable for web/VPN.")
+    print(f"     - For VPN, UDP ports matter (e.g., 443, 51820 for WireGuard).")
+    print(f"     - Repeat the test from multiple Iranian ISPs (Hamrah Aval, Irancell, etc.).")
 
-# ==================== main ====================
+# ==================== MAIN ====================
 
 def main():
     print(f"{colored('\n' + '='*60, 'magenta')}")
     print(f"{colored('  IP Connectivity Checker - Iran Access Test', 'bold')}")
-    print(f"{colored('  بررسی دسترسی IP از ایران', 'bold')}")
+    print(f"{colored('  Comprehensive TCP/UDP/Ping/DNS/HTTP/Traceroute/MTU Tool', 'bold')}")
     print(f"{colored('='*60, 'magenta')}")
 
-    # دریافت IP با اولویت: آرگومان → TARGET_IP → ورودی کاربر → تشخیص خودکار
+    # Get IP with priority: CLI arg -> TARGET_IP -> user input -> auto-detect
     ip = None
 
-    # اولویت 1: آرگومان خط فرمان
+    # Priority 1: Command line argument
     if len(sys.argv) > 1:
         try:
             ipaddress.ip_address(sys.argv[1])
             ip = sys.argv[1]
-            print(f"\n  ✅ IP از آرگومان خط فرمان: {ip}")
+            print(f"\n  [PASS] IP from command line argument: {ip}")
         except ValueError:
-            print(f"\n  ❌ IP نامعتبر در آرگومان: {sys.argv[1]}")
+            print(f"\n  [FAIL] Invalid IP in argument: {sys.argv[1]}")
             sys.exit(1)
 
-    # اولویت 2: TARGET_IP در کد
+    # Priority 2: TARGET_IP in code
     elif TARGET_IP:
         ip = TARGET_IP
-        print(f"\n  ✅ IP از تنظیمات کد: {ip}")
+        print(f"\n  [PASS] IP from code settings: {ip}")
 
-    # اولویت 3: ورودی از کاربر
+    # Priority 3: Interactive user input
     else:
         ip = get_ip_from_user()
-        print(f"\n  ✅ IP انتخاب‌شده: {ip}")
+        print(f"\n  [PASS] Selected IP: {ip}")
 
-    # تست‌ها
+    # Run all tests
     tcp_results = test_tcp_ports(ip, TARGET_PORTS_TCP)
     udp_results = test_udp_ports(ip, TARGET_PORTS_UDP)
     ping_success, ping_detail, ping_avg = test_ping(ip)
@@ -702,11 +677,11 @@ def main():
     test_mtu(ip)
     test_download_speed(ip)
 
-    # گزارش نهایی
+    # Final report
     print_final_report(ip, tcp_results, udp_results, ping_success, ping_detail, ping_avg)
 
     print(f"\n{colored('='*60, 'magenta')}")
-    print(f"{colored('  بررسی به پایان رسید.', 'bold')}")
+    print(f"{colored('  Check completed.', 'bold')}")
     print(f"{colored('='*60, 'magenta')}")
 
 if __name__ == "__main__":
